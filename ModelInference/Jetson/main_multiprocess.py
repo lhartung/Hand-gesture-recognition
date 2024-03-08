@@ -118,12 +118,13 @@ class HandFeatureBuffer:
         self.__init__()
 
 
-def Udp2Buffer_Process(receive_lock, receive_share_data):
+def Udp2Buffer_Process(receive_lock, receive_share_data, socket_fd):
     ## Settings
     # Declare a local udp socket
-    udpIP = "127.0.0.1" # local ip address
-    udp_socket = UdpSocket(udpIP=udpIP, portTX=8000, portRX=8001, 
-                           enableRX=True, suppressWarnings=True)
+    udpIP = "0.0.0.0" # local ip address
+    sock = socket.fromfd(socket_fd, socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket = U.UdpComms(udpIP=udpIP, portTX=8000, portRX=8001, 
+            enableRX=True, suppressWarnings=True, from_socket=sock)
     
     leftHandFeatureBuffer = HandFeatureBuffer()
     rightHandFeatureBuffer = HandFeatureBuffer()
@@ -134,7 +135,7 @@ def Udp2Buffer_Process(receive_lock, receive_share_data):
         # Keep running forever 
         try:
             # Receive from UDP
-            data = udp_socket.sock.ReadReceivedData() # read data
+            data, addr = udp_socket.ReadReceivedData() # read data
         except:
             pass
             #with receive_lock:
@@ -151,6 +152,7 @@ def Udp2Buffer_Process(receive_lock, receive_share_data):
                     receive_share_data['hasNewData'] = True
                     receive_share_data['rightHandBuffer'] = rightHandFeatureBuffer
                     receive_share_data['leftHandBuffer'] = leftHandFeatureBuffer
+                    receive_share_data['clientAddress'] = addr
     
         time.sleep(0.005)
     print("udp2buffer process stopped")
@@ -210,6 +212,10 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
             hasNewData = receive_share_data['hasNewData']
             rightHandFeatureBuffer = receive_share_data['rightHandBuffer']
             leftHandFeatureBuffer = receive_share_data['leftHandBuffer']
+            clientAddress = receive_share_data['clientAddress']
+
+        with label_lock:
+            label_share_data['clientAddress'] = clientAddress
 
         if hasNewData:
             right_X, right_ready_flag = rightHandFeatureBuffer.sample()
@@ -222,6 +228,7 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
                 print("Right Hand Label: {}".format(right_y))
                 with label_lock:
                     label_share_data['rightLabelBuffer'].push(right_y)
+                    label_share_data['hasNewRightLabel'] = True
             else:
                 with label_lock:
                     label_share_data['rightLabelBuffer'].reset()
@@ -236,6 +243,7 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
             else:
                 with label_lock:
                     label_share_data['leftLabelBuffer'].reset()
+                    label_share_data['hasNewLeftLabel'] = True
 
             with receive_lock:
                 receive_share_data['hasNewData'] = False
@@ -269,16 +277,13 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
         #     pass
 
 
-def LabelBuffer2UDP_Process(label_lock, label_share_data):
+def LabelBuffer2UDP_Process(label_lock, label_share_data, socket_fd):
     # Initialize label buffer
     rightLabelBuffer = LabelBuffer(length=10)
     leftLabelBuffer = LabelBuffer(length=10)
-    # Create a UDP socket
-    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    # Target device (Hololens 2) ip and port
-    target_ip = "192.168.1.38"
-    taret_port = 8000
+    # Create a UDP socket
+    udp_socket = socket.fromfd(socket_fd, socket.AF_INET, socket.SOCK_DGRAM)
 
     with label_lock:
         label_share_data['hasNewRightLabel'] = False
@@ -288,6 +293,7 @@ def LabelBuffer2UDP_Process(label_lock, label_share_data):
 
     while(True):
         with label_lock:
+            clientAddress = label_share_data['clientAddress']
             hasNewRightLabel = label_share_data['hasNewRightLabel']
             hasNewLeftLabel = label_share_data['hasNewLeftLabel']
             if hasNewRightLabel:
@@ -298,9 +304,11 @@ def LabelBuffer2UDP_Process(label_lock, label_share_data):
                 label_share_data['hasNewLeftLabel'] = False
                 
         if hasNewRightLabel:        
-            udp_socket.sock.SendDataToTarget(rightLabel, target_ip, taret_port)
+            #udp_socket.sock.SendDataToTarget(rightLabel, *clientAddress)
+            udp_socket.sendto(rightLabel, clientAddress)
         if hasNewLeftLabel:    
-            udp_socket.sock.SendDataToTarget(leftLabel, target_ip, taret_port)
+            #udp_socket.sock.SendDataToTarget(leftLabel, *clientAddress)
+            udp_socket.sendto(leftLabel, clientAddress)
 
         time.sleep(0.005)
 
@@ -314,6 +322,9 @@ def Timer_Process():
         
 
 if __name__ == "__main__":
+    # Create a socket that will be shared between sender and receiver processes
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    socket_fd = udp_socket.fileno()
     
     manager = multiprocessing.Manager()
     print("Initialize manager")
@@ -323,6 +334,7 @@ if __name__ == "__main__":
     receive_share_data['hasNewData'] = False
     receive_share_data['rightHandBuffer'] = None
     receive_share_data['leftHandBuffer'] = None
+    receive_share_data['clientAddress'] = None
 
 
     label_lock = manager.Lock()
@@ -331,10 +343,11 @@ if __name__ == "__main__":
     label_share_data['hasNewLeftLabel'] = False
     label_share_data['rightLabelBuffer'] = None
     label_share_data['leftLabelBuffer'] = None
+    label_share_data['clientAddress'] = None
 
 
     udp2buffer_process = multiprocessing.Process(target=Udp2Buffer_Process, 
-                                              args=(receive_lock, receive_share_data))
+                                              args=(receive_lock, receive_share_data, socket_fd))
     
 
     buffer2ml_process = multiprocessing.Process(target=Buffer2ML_Process, 
@@ -342,7 +355,7 @@ if __name__ == "__main__":
                                                     label_lock, label_share_data))
 
     labelbuffer2udp_process = multiprocessing.Process(target=LabelBuffer2UDP_Process, 
-                                              args=(label_lock, label_share_data))
+                                              args=(label_lock, label_share_data, socket_fd))
     
     timer_process = multiprocessing.Process(target=Timer_Process)
     

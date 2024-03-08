@@ -7,7 +7,7 @@
 # Use under the Apache License 2.0
 
 class UdpComms():
-    def __init__(self,udpIP,portTX,portRX,enableRX=False,suppressWarnings=True):
+    def __init__(self,udpIP,portTX,portRX,enableRX=False,suppressWarnings=True,from_socket=None):
         """
         Constructor
         :param udpIP: Must be string e.g. "127.0.0.1"
@@ -26,9 +26,13 @@ class UdpComms():
         self.suppressWarnings = suppressWarnings # when true warnings are suppressed
         self.isDataReceived = False
         self.dataRX = None
+        self.lastClient = None
 
         # Connect via UDP
-        self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # internet protocol, udp (DGRAM) socket
+        if from_socket is None:
+            self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # internet protocol, udp (DGRAM) socket
+        else:
+            self.udpSock = from_socket
         self.udpSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # allows the address/port to be reused immediately instead of it being stuck in the TIME_WAIT state waiting for late packets to arrive.
         self.udpSock.bind((udpIP, portRX))
 
@@ -69,7 +73,7 @@ class UdpComms():
 
         data = None
         try:
-            data, _ = self.udpSock.recvfrom(2048)
+            data, addr = self.udpSock.recvfrom(2048)
             data = data.decode('utf-8')
         except WindowsError as e:
             if e.winerror == 10054: # An error occurs if you try to receive before connecting to other application
@@ -80,7 +84,7 @@ class UdpComms():
             else:
                 raise ValueError("Unexpected Error. Are you sure that the received data can be converted to a string")
 
-        return data
+        return data, addr
 
     def ReadUdpThreadFunc(self): # Should be called from thread
         """
@@ -94,8 +98,9 @@ class UdpComms():
         self.isDataReceived = False # Initially nothing received
 
         while True:
-            data = self.ReceiveData()  # Blocks (in thread) until data is returned (OR MAYBE UNTIL SOME TIMEOUT AS WELL)
+            data, addr = self.ReceiveData()  # Blocks (in thread) until data is returned (OR MAYBE UNTIL SOME TIMEOUT AS WELL)
             self.dataRX = data # Populate AFTER new data is received
+            self.lastClient = addr
             self.isDataReceived = True
             # When it reaches here, data received is available
 
@@ -114,4 +119,4 @@ class UdpComms():
             data = self.dataRX
             self.dataRX = None # Empty receive buffer
 
-        return data
+        return data, self.lastClient
