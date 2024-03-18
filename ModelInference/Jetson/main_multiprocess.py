@@ -311,15 +311,15 @@ def LabelBuffer2UDP_Process(label_lock, label_share_data, socket_fd):
             if hasNewLeftLabel:
                 leftLabel = label_share_data['leftLabelBuffer'].sample()
                 label_share_data['hasNewLeftLabel'] = False
-                
-        if hasNewRightLabel:        
+
+        if hasNewRightLabel:
             #udp_socket.sock.SendDataToTarget(rightLabel, *clientAddress)
-            rightLabel = str(rightLabel.item()).encode("utf-8")
-            udp_socket.sendto(rightLabel, clientAddress)
-        if hasNewLeftLabel:    
+            message = "R/{}".format(rightLabel.item()).encode("utf-8")
+            udp_socket.sendto(message, clientAddress)
+        if hasNewLeftLabel:
             #udp_socket.sock.SendDataToTarget(leftLabel, *clientAddress)
-            leftLabel = str(leftLabel.item()).encode("utf-8")
-            udp_socket.sendto(leftLabel, clientAddress)
+            message = "L/{}".format(leftLabel.item()).encode("utf-8")
+            udp_socket.sendto(message, clientAddress)
 
         time.sleep(0.005)
 
