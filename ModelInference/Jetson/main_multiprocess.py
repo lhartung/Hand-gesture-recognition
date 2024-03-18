@@ -108,6 +108,7 @@ class HandFeatureBuffer:
         else:
             new = HandFeatureBuffer(buffer=self.buffer)
             new.valid_length = 0
+            return new
 
     def sample(self):
         if self.valid_length < self.window_length:
