@@ -240,10 +240,10 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
                 print("Left Hand Label: {}".format(left_y))
                 with label_lock:
                     label_share_data['leftLabelBuffer'].push(left_y)
+                    label_share_data['hasNewLeftLabel'] = True
             else:
                 with label_lock:
                     label_share_data['leftLabelBuffer'].reset()
-                    label_share_data['hasNewLeftLabel'] = True
 
             with receive_lock:
                 receive_share_data['hasNewData'] = False
@@ -305,9 +305,11 @@ def LabelBuffer2UDP_Process(label_lock, label_share_data, socket_fd):
                 
         if hasNewRightLabel:        
             #udp_socket.sock.SendDataToTarget(rightLabel, *clientAddress)
+            rightLabel = str(rightLabel.item()).encode("utf-8")
             udp_socket.sendto(rightLabel, clientAddress)
         if hasNewLeftLabel:    
             #udp_socket.sock.SendDataToTarget(leftLabel, *clientAddress)
+            leftLabel = str(leftLabel.item()).encode("utf-8")
             udp_socket.sendto(leftLabel, clientAddress)
 
         time.sleep(0.005)
