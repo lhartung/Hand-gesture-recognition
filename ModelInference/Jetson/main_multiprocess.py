@@ -82,40 +82,43 @@ class DataPreprocessor():
             rightX = np.expand_dims(rightX, axis=0)
 
         return rightX, rightValidFlag, leftX, leftValidFlag
-    
+
 
 class HandFeatureBuffer:
-    def __init__(self, window_length=30):
-        self.buffer = np.zeros([window_length, 78])
+    def __init__(self, window_length=30, buffer=None):
+        if buffer is None:
+            self.window_length = window_length
+            self.buffer = np.zeros([window_length, 78])
+        else:
+            self.window_length = len(buffer)
+            self.buffer = buffer
+
         self.valid_length = 0
-        self.ready_flag = False
-        self.window_length = window_length
-    
+
     def push(self, data, valid_flag):
         #data, valid_flag = self.data_preprocess(raw_data)
         if valid_flag == True:
             #print(data.shape)
             assert data.shape==(1,78)
-            
-            ## !!!!!!!!!!!!!!!!!!!!
-            self.buffer = np.roll(self.buffer, -1, axis=0)
-            self.buffer[-1] = data
-            
-            if self.valid_length < self.window_length:
-                self.valid_length += 1
+
+            new = HandFeatureBuffer(buffer=np.roll(self.buffer, -1, axis=0))
+            new.buffer[-1] = data
+            new.valid_length = min(self.valid_length+1, self.window_length)
+            return new
         else:
-            self.valid_length = 0
-    
+            new = HandFeatureBuffer(buffer=self.buffer)
+            new.valid_length = 0
+
     def sample(self):
         if self.valid_length < self.window_length:
-            self.ready_flag = False
-            return np.expand_dims(self.buffer, axis=0), self.ready_flag
+            ready_flag = False
+            return np.expand_dims(self.buffer, axis=0), ready_flag
         else:
-            self.ready_flag = True
-            return np.expand_dims(self.buffer, axis=0), self.ready_flag
-        
+            ready_flag = True
+            return np.expand_dims(self.buffer, axis=0), ready_flag
+
     def reset(self):
-        self.__init__()
+        new = HandFeatureBuffer(length=self.window_length)
 
 
 def Udp2Buffer_Process(receive_lock, receive_share_data, socket_fd):
@@ -147,8 +150,8 @@ def Udp2Buffer_Process(receive_lock, receive_share_data, socket_fd):
                 # Preprocess and buffer
                 rightX, rightValidFlag, leftX, leftValidFlag = dataPreprocessor.preprocess(data)
                 with receive_lock:
-                    rightHandFeatureBuffer.push(rightX, rightValidFlag)
-                    leftHandFeatureBuffer.push(leftX, leftValidFlag)
+                    rightHandFeatureBuffer = rightHandFeatureBuffer.push(rightX, rightValidFlag)
+                    leftHandFeatureBuffer = leftHandFeatureBuffer.push(leftX, leftValidFlag)
                     receive_share_data['hasNewData'] = True
                     receive_share_data['rightHandBuffer'] = rightHandFeatureBuffer
                     receive_share_data['leftHandBuffer'] = leftHandFeatureBuffer
@@ -159,21 +162,26 @@ def Udp2Buffer_Process(receive_lock, receive_share_data, socket_fd):
 
 
 class LabelBuffer:
-    def __init__(self, length):
-        self.length = length
-        self.buffer = np.ones(length, dtype=int)*4 # 4 is the others label
-    
+    def __init__(self, length=10, buffer=None):
+        if buffer is None:
+            self.length = length
+            self.buffer = np.ones(length, dtype=int)*4 # 4 is the others label
+        else:
+            self.length = len(buffer)
+            self.buffer = buffer
+
     def push(self, label):
-        self.buffer = np.roll(self.buffer, -1, axis=0)
-        self.buffer[-1] = label
-        
+        new = LabelBuffer(buffer=np.roll(self.buffer, -1, axis=0))
+        new.buffer[-1] = label
+        return new
+
     def sample(self):
         return np.bincount(self.buffer).argmax()
-    
+
     def reset(self):
-        self.__init__(self.length)
-    
-        
+        return LabelBuffer(length=self.length)
+
+
 def load_model(model_path, device):
     state_dict = torch.load(model_path, 
                             map_location=device)['state_dict']
@@ -227,11 +235,11 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
                 right_y = int(right_y.argmax(dim=-1).detach().cpu())
                 print("Right Hand Label: {}".format(right_y))
                 with label_lock:
-                    label_share_data['rightLabelBuffer'].push(right_y)
+                    label_share_data['rightLabelBuffer'] = label_share_data['rightLabelBuffer'].push(right_y)
                     label_share_data['hasNewRightLabel'] = True
             else:
                 with label_lock:
-                    label_share_data['rightLabelBuffer'].reset()
+                    label_share_data['rightLabelBuffer'] = label_share_data['rightLabelBuffer'].reset()
 
             if left_ready_flag:
                 left_X = torch.tensor(left_X, dtype=torch.float).to(device)
@@ -239,11 +247,11 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
                 left_y = int(left_y.argmax(dim=-1).detach().cpu())
                 print("Left Hand Label: {}".format(left_y))
                 with label_lock:
-                    label_share_data['leftLabelBuffer'].push(left_y)
+                    label_share_data['leftLabelBuffer'] = label_share_data['leftLabelBuffer'].push(left_y)
                     label_share_data['hasNewLeftLabel'] = True
             else:
                 with label_lock:
-                    label_share_data['leftLabelBuffer'].reset()
+                    label_share_data['leftLabelBuffer'] = label_share_data['leftLabelBuffer'].reset()
 
             with receive_lock:
                 receive_share_data['hasNewData'] = False
