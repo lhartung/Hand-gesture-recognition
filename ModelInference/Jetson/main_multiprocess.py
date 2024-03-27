@@ -216,6 +216,9 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
     X = torch.zeros(1, 30, 78).to(device, dtype=torch.float)
     y = model.forward(X)
 
+    last_left = None
+    last_right = None
+
     while True:
         with receive_lock:
             hasNewData = receive_share_data['hasNewData']
@@ -234,7 +237,9 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
                 right_X = torch.tensor(right_X, dtype=torch.float).to(device)
                 right_y = model.forward(right_X)
                 right_y = int(right_y.argmax(dim=-1).detach().cpu())
-                print("Right Hand Label: {}".format(right_y))
+                if right_y != last_right:
+                    print("Right Hand Label: {}".format(right_y))
+                    last_right = right_y
                 with label_lock:
                     label_share_data['rightLabelBuffer'] = label_share_data['rightLabelBuffer'].push(right_y)
                     label_share_data['hasNewRightLabel'] = True
@@ -246,7 +251,9 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
                 left_X = torch.tensor(left_X, dtype=torch.float).to(device)
                 left_y = model.forward(left_X)
                 left_y = int(left_y.argmax(dim=-1).detach().cpu())
-                print("Left Hand Label: {}".format(left_y))
+                if left_y != last_left:
+                    print("Left Hand Label: {}".format(left_y))
+                    last_left = left_y
                 with label_lock:
                     label_share_data['leftLabelBuffer'] = label_share_data['leftLabelBuffer'].push(left_y)
                     label_share_data['hasNewLeftLabel'] = True
