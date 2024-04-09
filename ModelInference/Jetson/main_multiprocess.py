@@ -164,7 +164,7 @@ def Udp2Buffer_Process(receive_lock, receive_share_data, socket_fd):
 
 
 class LabelBuffer:
-    def __init__(self, length=10, buffer=None):
+    def __init__(self, length=60, buffer=None):
         if buffer is None:
             self.length = length
             self.buffer = np.ones(length, dtype=int)*4 # 4 is the others label
@@ -308,8 +308,8 @@ def Buffer2ML_Process(receive_lock, receive_share_data,
 
 def LabelBuffer2UDP_Process(label_lock, label_share_data, socket_fd):
     # Initialize label buffer
-    rightLabelBuffer = LabelBuffer(length=10)
-    leftLabelBuffer = LabelBuffer(length=10)
+    rightLabelBuffer = LabelBuffer(length=60)
+    leftLabelBuffer = LabelBuffer(length=60)
 
     # Create a UDP socket
     udp_socket = socket.fromfd(socket_fd, socket.AF_INET, socket.SOCK_DGRAM)
