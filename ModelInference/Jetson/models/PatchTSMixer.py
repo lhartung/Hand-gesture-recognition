@@ -14,7 +14,7 @@ class PatchTSMixer(nn.Module):
         self.layer_dim = layer_dim
         self.config = PatchTSMixerConfig(num_input_channels=input_dim, 
                                          d_model=hidden_dim,
-                                         patch_len=8,
+                                         patch_length=5,
                                          #prediction_length=1,
                                          num_targets=output_dim,
                                          num_layers=layer_dim,
